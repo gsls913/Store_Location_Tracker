@@ -1,153 +1,282 @@
-# 量贩零食门店另类数据跟踪
+# 量贩零食门店地理数据跟踪
 
-这个项目用地图 Web API 跟踪量贩零食品牌门店点位，形成可重复的门店快照、增量变化和区域分布数据。POI 指地图平台里的兴趣点；在本项目的用户界面里统一称为“门店点位”。
+这是一个用于投研分析的门店地理另类数据项目。它通过地图平台返回的门店点位，跟踪量贩零食与新鲜零食品牌在不同城市的空间分布、竞争密度和选址环境，并生成一个可发布的静态地图网站。
 
-## 适合回答的问题
+项目当前的核心产品是城市级门店地图网站，而不是全国每日全量数据库。全国全量扫描在百度免费/企业日额度下成本过高，因此目前采用“重点城市精扫 + 其他城市粗扫/省级覆盖”的策略。
 
-- 鸣鸣很忙、万辰系品牌的门店数量是否继续扩张？
-- 哪些省、市、区县新增更快？
-- 哪些门店从地图 POI 中消失，可能对应闭店或迁址？
-- 同一行政区内不同品牌的覆盖强度如何变化？
+公开网站由 GitHub + Netlify 自动部署，Netlify 项目名为 `store-location-tracker`。
 
-## 快速开始
+## 研究对象
 
-1. 安装依赖：
+量贩零食品牌：
+
+- `万辰集团量贩零食`：好想来、老婆大人、来优品、吖嘀吖嘀、陆小馋等
+- `鸣鸣很忙`：零食很忙、赵一鸣零食、鸣鸣很忙等
+
+新鲜零食品牌：
+
+- 一栗nutco
+- 几多全
+- 金粒门
+- 蒲妈妈
+- 久食山
+
+网站上的“门店点位”指地图平台中的 POI，也就是地图数据库记录的门店兴趣点。它不是公司官方经营数据。
+
+## 当前网站能力
+
+网站入口：
+
+- 本地生成入口：`site/index.html`
+- 部署仓库入口：`github_deploy_repo/site/index.html`
+- 生成源入口：`analytics/city_store_maps.html`
+
+核心功能：
+
+- 首页省份地图：点击省份后进入省内城市分块，已获取城市可继续进入城市地图。
+- 城市地图：展示量贩零食和新鲜零食门店点位。
+- 门店图层：按集团/子品牌控制显示，量贩零食始终排在新鲜零食前面。
+- 极近门店 Top 10：
+  - 不同品牌量贩零食最近 Top 10
+  - 同一品牌量贩零食最近 Top 10
+  - 新鲜零食 × 量贩零食最近 Top 10
+- 环境图层：来自 OpenStreetMap Overpass 的商业设施点位、城市功能网格等。
+- 扫描口径标识：每个城市标注为 `完整扫描`、`粗扫描` 或省级 `混合/粗扫汇总`。
+- 制作人标识：`Created by Hammon`
+
+## 数据口径
+
+### 完整扫描
+
+完整扫描表示这个城市在城市/区县粗扫基础上，进一步做过更细颗粒度的街道或街镇级补扫。它仍不是绝对无遗漏，但比粗扫描更适合看城市内门店总量、区县分布和竞争密度。
+
+当前完整扫描城市：
+
+- 上海市：较细颗粒度 Suggestion 扫描
+- 长沙市：区县级 + 街镇级补扫
+- 兰州市：街镇级补扫
+- 深圳市：城市级 + 区县级粗扫基础上，完成 `1554 / 1554` 个街道级补扫请求
+
+### 粗扫描
+
+粗扫描主要使用城市级 + 区县级低额度关键词探测。它适合看大致空间分布和方向性样本，不适合把门店数量当作完整口径。
+
+粗扫描在高密度城市会明显低估。长沙对比验证中，低额度方法只找到了约 205 个量贩点位，而完整旧方法有约 625 个，召回率约三分之一。这也是后来在网站里标注扫描口径的原因。
+
+### 省级汇总
+
+省级汇总页通常是混合口径：
+
+- 湖南省：包含长沙完整扫描，也包含其他城市粗扫描。
+- 广东省：多数城市为粗扫描，但深圳已经用完整扫描结果覆盖旧深圳粗扫数据。
+
+跨城市和跨省比较时，必须先看扫描口径。粗扫描城市的“低门店数”可能只是漏抓，并不一定代表真实门店少。
+
+## 数据获取方法
+
+当前主要使用百度地图 Suggestion API。早期做过高德地图和百度地图的全国化流程探索，但当前城市网站以百度地图数据为主。
+
+典型扫描层级：
+
+1. 城市级探测：例如 `好想来`、`零食很忙深圳`。
+2. 区县级探测：例如 `好想来(宝安区`、`好想来(深圳市宝安区`。
+3. 街道/街镇级补扫：例如 `好想来(西乡`、`好想来(深圳西乡`、`好想来(宝安区西乡`。
+
+为什么需要街道级补扫：
+
+- 百度 Suggestion 接口每个 query 返回结果有限。
+- 同一城市里门店密度高时，城市级或区县级 query 会被热门区域占满，远端街镇门店容易漏掉。
+- 街道级拆分可以显著提高召回，但请求量会大幅增加。
+
+请求额度原则：
+
+- 每发起一次百度 Suggestion API 请求，就消耗一次百度请求额度。
+- 不要随意启动全国或省级大范围扫描。
+- 开始长扫描前，应先 dry-run 或估算请求量。
+- 长扫描必须设置 `--max-requests` 和命令超时，方便额度耗尽时续跑。
+
+## 去重与字段
+
+主要门店字段：
+
+- `uid`：百度地图 POI 唯一 ID
+- `group`：集团，如 `鸣鸣很忙`、`万辰集团量贩零食`、`新鲜零食`
+- `subbrand`：子品牌，如 `好想来`、`零食很忙`
+- `name`：门店名
+- `province`、`city`、`district`
+- `address`
+- `lat`、`lng`：百度 BD-09 坐标
+- `business_hours`、`rating`：如果百度返回则保留
+- `first_query`、`query_count`
+
+地图展示时会把百度 BD-09 坐标转换为 WGS84 后绘制在 OpenStreetMap 底图上。
+
+基础去重逻辑：
+
+- 优先按 `uid` 合并。
+- 对相同集团、子品牌、省市区县、地址的样本做同地址去重。
+- 同地址重复时优先保留名称更完整、包含“零食”或子品牌名、区县信息更清楚的记录。
+
+已知限制：
+
+- 百度和高德覆盖不同，百度没有的点不一定代表门店不存在。
+- 地图平台可能有同址重复 POI、命名不完整、坐标偏移或门店迁址滞后。
+- 开店日期/POI 添加日期通常无法从百度 Suggestion 返回数据中直接获得。
+
+## 环境图层
+
+环境图层由 `scripts/build_environment_layers.py` 生成，数据源是 OpenStreetMap Overpass API。
+
+当前保留：
+
+- 商业设施点位
+- 城市功能网格
+- 门店附近商业设施距离
+- 门店所在功能网格指标
+
+已经移除：
+
+- 人口密度代理图层
+- 夜间活跃度代理图层
+
+移除原因：这些代理值不是可靠真实数据，容易误导分析。未来除非找到可靠来源，不要重新加入。
+
+OpenStreetMap 数据可能不完整，尤其在国内城市覆盖不均。环境图层适合作为辅助观察，不应作为严肃定量结论的唯一依据。
+
+## 目录结构
+
+关键目录和文件：
+
+- `scripts/build_city_store_maps.py`：主网站生成器。城市配置、数据源、扫描口径、首页分组都在这里。
+- `scripts/build_environment_layers.py`：环境图层生成器。
+- `scripts/resume_*_suggestion.py`：各城市或省份的百度 Suggestion 扫描/续跑脚本。
+- `diagnostics/`：门店抓取原始结果、合并结果、请求日志和诊断文件。
+- `data/environment/`：环境图层 JSON。
+- `analytics/`：生成出来的 HTML 页面。
+- `site/`：本地静态网站目录。
+- `github_deploy_repo/`：真正用于 GitHub/Netlify 部署的 Git 仓库。
+- `github_deploy_repo/site/`：部署用静态网站目录。
+- `poi_tracker/`：早期全国 POI 跟踪、SQLite、周度分析相关代码。当前城市网站主要不走这条主线，但不要随意删除。
+- `archive/`：旧仪表盘、旧输出和参考资料。
+- `AGENTS.md`：给 Codex 或未来 coding agent 的操作规范。
+- `apikey.env`：本地 API key，永远不要提交、打印或发布。
+
+注意：项目根目录不是部署仓库。部署仓库是 `github_deploy_repo/`。
+
+## 常用工作流
+
+### 重建网站
+
+修改数据源、城市配置、生成器或环境图层后，运行：
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python scripts\build_city_store_maps.py
+Copy-Item analytics\city_store_maps.html site\index.html -Force
+Copy-Item analytics\city_maps\*.html site\city_maps\ -Force
+Copy-Item analytics\province_maps\*.html site\province_maps\ -Force
+Copy-Item analytics\city_store_maps.html github_deploy_repo\site\index.html -Force
+Copy-Item analytics\city_maps\*.html github_deploy_repo\site\city_maps\ -Force
+Copy-Item analytics\province_maps\*.html github_deploy_repo\site\province_maps\ -Force
 ```
 
-2. 获取并设置高德 Web 服务 Key。具体步骤见 [docs/amap_key.md](docs/amap_key.md)。
+### 验证
 
 ```powershell
-$env:AMAP_KEY="你的高德Web服务Key"
+python -m pytest -q --basetemp .tmp\pytest
 ```
 
-也可以把 Key 写到项目根目录的 `.env` 或 `apikey.env` 文件中：
-
-```text
-AMAP_KEY=你的高德Web服务Key
-```
-
-3. 检查 Key 和 API 连通性：
+检查生成页面里的 JavaScript 语法：
 
 ```powershell
-python -m poi_tracker doctor
+@'
+const fs = require('fs');
+for (const file of ['site/index.html','site/city_maps/shenzhen.html','site/province_maps/guangdong.html']) {
+  const html = fs.readFileSync(file, 'utf8');
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  for (const script of scripts) new Function(script);
+  console.log('syntax ok', file, scripts.length);
+}
+'@ | node
 ```
 
-4. 先跑小样本冒烟测试：
+### 发布
 
 ```powershell
-.\scripts\run_smoke.ps1
+cd github_deploy_repo
+git status --short
+git add site
+git commit -m "Update city store maps"
+git push origin main
 ```
 
-5. 拉取行政区 adcode。首次建议先用市级或少数省份试跑，确认额度和效果后再跑区县级全国数据：
+Netlify 会自动读取 GitHub 最新提交并重新部署，网站 URL 不变。
+
+如果只改了根目录 README，需要同步到部署仓库：
 
 ```powershell
-python -m poi_tracker fetch-adcodes --output data/adcodes_city.csv --level city
+Copy-Item README.md github_deploy_repo\README.md -Force
 ```
 
-6. 抓取 POI 并写入 SQLite 快照：
+## 添加或更新一个城市
+
+1. 先确定扫描策略：
+   - 门店少/下沉城市：先用城市级 + 区县级低额度探测。
+   - 高密度城市或重点样本：进一步做街道/街镇级补扫。
+2. 估算请求量并确认额度。
+3. 运行对应 `scripts/resume_*_suggestion.py` 脚本。
+4. 检查 request log 是否有 `status=302 天配额超限`。
+5. 检查输出 CSV 的门店数量、品牌结构、区县分布是否合理。
+6. 必要时生成或刷新环境图层：
 
 ```powershell
-python -m poi_tracker crawl-amap --config config/brands.json --adcodes data/adcodes_city.csv --db data/poi_tracker.sqlite
+python scripts\build_environment_layers.py --city <slug> --max-tiles 60 --max-seconds 900 --refresh
 ```
 
-7. 导出最新快照和变化：
+7. 在 `scripts/build_city_store_maps.py` 中加入或更新城市配置。
+8. 明确城市扫描口径：
+   - 完整扫描
+   - 粗扫描
+   - 混合/粗扫汇总
+9. 重建、验证、同步部署目录。
+10. 如果这是重要口径变化，更新本 README。
 
-```powershell
-python -m poi_tracker export --db data/poi_tracker.sqlite --out-dir exports
-```
+## 已有重点城市状态
 
-也可以直接跑完整市级版本：
+截至 2026-06-28：
 
-```powershell
-.\scripts\run_full_city.ps1
-```
+- 上海市：完整扫描
+- 长沙市：完整扫描
+- 兰州市：完整扫描
+- 深圳市：完整扫描，量贩点位 489，新鲜零食点位 7
+- 邵阳市：粗扫描
+- 北京市：粗扫描
+- 广州市：粗扫描
+- 商丘市：粗扫描
+- 周口市：粗扫描
+- 湖南省汇总：混合口径
+- 广东省汇总：混合口径，深圳已用完整扫描结果覆盖
 
-如果使用免费额度，建议先看 [docs/quota_strategy.md](docs/quota_strategy.md)。每天跑全国全量通常不够，推荐生成每日轮转分片：
+这些状态以后如果改变，应同步更新 `scripts/build_city_store_maps.py` 的 `scan_profile()` 和本 README。
 
-```powershell
-.\scripts\setup_daily_shards.ps1
-.\scripts\run_daily_shard.ps1 -ShardNumber 1
-```
+## 投研使用注意
 
-或者让脚本按日期自动选择 shard：
+- 完整扫描城市可以更认真地看城市内空间格局、区县分布、极近门店和商圈竞争。
+- 粗扫描城市更适合做方向性观察，不适合直接比较绝对门店数。
+- 新鲜零食门店目前数量少，且扫描深度通常低于量贩零食，应作为辅助变量。
+- 地图点位不是流水、不是开店日期，也不是官方门店清单。
+- 门店新增或消失应结合地图页面人工抽样核验。
+- 对外展示时要保留扫描口径说明，避免把样本数据讲成完整事实。
 
-```powershell
-.\scripts\run_today_shard.ps1
-```
+## 维护约定
 
-可选：注册 Windows 每日计划任务：
+重要变化必须更新这个 README，包括但不限于：
 
-```powershell
-.\scripts\register_daily_task.ps1 -Time "20:30"
-```
+- 新增城市或省份
+- 某城市从粗扫描升级为完整扫描
+- 重要数据源替换
+- 品牌关键词变化
+- 去重规则变化
+- 网站功能和展示口径变化
+- 发布流程变化
 
-百度地图企业额度更高时，推荐把百度作为主数据源。策略说明见 [docs/provider_strategy.md](docs/provider_strategy.md)。
-
-```powershell
-python -m poi_tracker doctor-baidu
-.\scripts\setup_baidu_daily_shards.ps1
-.\scripts\run_baidu_weekly_next_shard.ps1
-```
-
-如果 2000 次/日不足以跑完整全国，使用周度续跑：每次运行自动执行本周尚未完成的下一个 shard；一周内全部 shard 完成后，仪表盘才把该周作为正式周度快照。
-
-生成正式分析指标和 HTML 仪表盘：
-
-```powershell
-python -m poi_tracker analyze --db data/poi_tracker.sqlite --out-dir analytics
-```
-
-打开 [analytics/dashboard.html](analytics/dashboard.html) 查看周度趋势、地图、区域分层、自动洞察、任务管理和数据质量面板。
-
-正式使用手册见 [docs/investment_dashboard_manual.md](docs/investment_dashboard_manual.md)。建议长期使用前先阅读其中的周度快照口径、指标解释和数据质量边界。
-
-如果要在页面里点击按钮续跑本周百度分片，需要启动本地服务：
-
-```powershell
-.\scripts\start_dashboard.ps1
-```
-
-然后打开：
-
-```text
-http://127.0.0.1:8765
-```
-
-## 配置说明
-
-品牌配置在 [config/brands.json](config/brands.json)。每个品牌可以设置多个关键词和别名：
-
-- `brand_id`：内部统一品牌 ID。
-- `display_name`：显示名称。
-- `keywords`：实际传给地图 API 的搜索词。
-- `include_aliases`：用于二次过滤 POI 名称，降低误匹配。
-- `exclude_keywords`：排除明显无关结果。
-
-## 数据表
-
-- `runs`：每次抓取任务。
-- `pois`：去重后的 POI 主表。
-- `observations`：每次 run 观测到的 POI 明细。
-- `run_seen`：某次 run 看到过哪些 POI。
-
-导出文件：
-
-- `latest_pois.csv`：最新 run 的 POI 明细。
-- `changes_since_previous.csv`：相对上一次 run 的新增、消失、持续存在。
-- `brand_region_summary.csv`：按品牌、省、市、区县聚合。
-- `searches.csv`：本次 run 实际搜索过的品牌、关键词、城市和请求计数。
-- `all_known_pois.csv`：历史累计已知门店，适合分片日更后看全局最新已知状态。
-- `all_known_brand_region_summary.csv`：历史累计已知门店的区域聚合。
-- `run_history.csv`：抓取任务历史。
-- `provider_region_comparison.csv`：高德/百度按品牌和区域的数量交叉对照。
-
-## 注意事项
-
-- POI 不是公司经营数据，新增或消失需要人工抽样核验。
-- 地图平台有更新延迟，通常更适合做趋势跟踪，不适合精确到日。
-- 如果某品牌单个区县搜索结果接近分页上限，需要继续拆分到街道、矩形网格或结合百度数据交叉验证。
+`AGENTS.md` 是给 Codex 的操作规范，`README.md` 是给人看的项目说明。两者都重要，但 README 应保持对项目整体逻辑的最新解释。
